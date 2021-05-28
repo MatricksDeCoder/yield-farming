@@ -12,7 +12,7 @@ contract YieldFarmer is ICallee, DydxFlashloanBase, Compound {
     // whether we are borrowing or withdrawing
     enum Direction { Deposit, Withdraw } 
 
-    // 
+    // direction borrow or payback
     struct Operation {
         address token;
         address cToken;
@@ -58,6 +58,29 @@ contract YieldFarmer is ICallee, DydxFlashloanBase, Compound {
         _initiateFlashLoan(_solo, _token,_cToken, Direction.Deposit, _amountProvided - 2, _amountBorrowed);
     }
 
+    function closePosition(
+    address _solo, 
+    address _token, 
+    address _cToken
+  ) external {
+    require(msg.sender == owner, 'only owner');
+    //2 wei is used to pay for flashloan
+    IERC20(_token).transferFrom(msg.sender, address(this), 2);
+    claimComp();
+    uint borrowBalance = getBorrowBalance(_cToken);
+    _initiateFlashloan(_solo, _token, _cToken, Direction.Withdraw, 0, borrowBalance);
+
+    //COMP
+    address compAddress = getCompAddress();
+    IERC20 comp = IERC20(compAddress);
+    uint compBalance = comp.balanceOf(address(this));
+    comp.transfer(msg.sender, compBalance);
+
+    //token
+    IERC20 token = IERC20(_token);
+    uint tokenBalance = token.balanceOf(address(this));
+    token.transfer(msg.sender, tokenBalance);
+  }
 
 
 
@@ -139,7 +162,7 @@ contract YieldFarmer is ICallee, DydxFlashloanBase, Compound {
         // 3. Deposit back $
         Actions.ActionArgs[] memory operations = new Actions.ActionArgs[](3);
 
-        // 1 withdrawal
+        // 1 withdrawal => borrow from DYDX
         operations[0] = _getWithdrawAction(marketId, _amountBorrowed);
         /* original call action
         operations[1] = _getCallAction(
